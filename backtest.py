@@ -27,8 +27,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DATA_DIR = Path(__file__).parent / "data"
-RESULTS_DIR = Path(__file__).parent / "results"
+import universe as uni
 
 INITIAL_CAPITAL = 50_000.0
 ALLOC_PER_TRADE = 5_000.0
@@ -189,7 +188,7 @@ def backtest(prices: dict[str, pd.DataFrame]) -> dict:
     }
 
 
-def report(result: dict) -> None:
+def report(result: dict, currency: str = "₹", results_dir: Path | None = None) -> None:
     trades, equity = result["trades"], result["equity"]
     print(f"\n{'=' * 60}\nBACKTEST RESULTS\n{'=' * 60}")
     if equity.empty:
@@ -220,8 +219,8 @@ def report(result: dict) -> None:
         win_rate = avg_w = avg_l = pf = avg_hold = 0.0
 
     print(f"Period:           {equity.index[0].date()} -> {equity.index[-1].date()}")
-    print(f"Initial Capital:  ₹{INITIAL_CAPITAL:,.2f}")
-    print(f"Final Equity:     ₹{final:,.2f}")
+    print(f"Initial Capital:  {currency}{INITIAL_CAPITAL:,.2f}")
+    print(f"Final Equity:     {currency}{final:,.2f}")
     print(f"Total Return:     {total_ret:+.2f}%")
     print(f"Max Drawdown:     {dd_pct:.2f}%")
     print(f"Sharpe (annual):  {sharpe:.2f}")
@@ -235,26 +234,33 @@ def report(result: dict) -> None:
         print("\nExits by reason:")
         print(trades["exit_reason"].value_counts().to_string())
 
-    RESULTS_DIR.mkdir(exist_ok=True)
-    trades.to_csv(RESULTS_DIR / "trades.csv", index=False)
-    equity.to_csv(RESULTS_DIR / "equity_curve.csv")
-    print(f"\nSaved -> {RESULTS_DIR/'trades.csv'}")
-    print(f"Saved -> {RESULTS_DIR/'equity_curve.csv'}")
+    out_dir = results_dir or (Path(__file__).parent / "results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    trades.to_csv(out_dir / "trades.csv", index=False)
+    equity.to_csv(out_dir / "equity_curve.csv")
+    print(f"\nSaved -> {out_dir/'trades.csv'}")
+    print(f"Saved -> {out_dir/'equity_curve.csv'}")
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", default=str(DATA_DIR))
+    p.add_argument("--universe", default="nasdaq100", choices=list(uni.UNIVERSES))
+    p.add_argument("--data-dir", default=None, help="Override data dir (default: from universe)")
+    p.add_argument("--results-dir", default=None, help="Override results dir (default: from universe)")
     args = p.parse_args()
 
-    prices = load_prices(Path(args.data_dir))
-    print(f"Loaded {len(prices)} symbols from {args.data_dir}")
+    cfg = uni.get(args.universe)
+    data_dir = Path(args.data_dir) if args.data_dir else cfg["data_dir"]
+    results_dir = Path(args.results_dir) if args.results_dir else cfg["results_dir"]
+
+    prices = load_prices(data_dir)
+    print(f"Universe: {cfg['label']}  |  Loaded {len(prices)} symbols from {data_dir}")
     if not prices:
         print("No data found. Run download_data.py first.")
         return
 
     result = backtest(prices)
-    report(result)
+    report(result, currency=cfg["currency"], results_dir=results_dir)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
-# NASDAQ 100 Buy/Sell Strategy App
+# Buy/Sell Strategy App
 
-End-to-end Python toolkit to **download** NASDAQ 100 daily data from Yahoo Finance, **backtest** a 52-week breakout strategy with trend filters, and **scan live** for stocks satisfying the strategy via a Streamlit dashboard.
+End-to-end Python toolkit to **download** index constituent daily data from Yahoo Finance, **backtest** a 52-week breakout strategy with trend filters, and **scan live** via a Streamlit dashboard.
+
+Supports multiple universes — currently **NASDAQ 100** (US, USD) and **Nifty 50** (India, INR). Add more by extending `universe.py`.
 
 ---
 
@@ -8,13 +10,19 @@ End-to-end Python toolkit to **download** NASDAQ 100 daily data from Yahoo Finan
 
 ```
 buy_sell_strategy_app/
-├── NASDAQ100.csv          # symbol list (column: Symbol)
-├── download_data.py       # fetches daily OHLCV → data/<SYMBOL>.csv
-├── backtest.py            # runs the strategy backtest
-├── dashboard.py           # Streamlit live scanner
+├── NASDAQ100.csv          # NASDAQ 100 symbol list
+├── Nifty50.csv            # Nifty 50 symbol list (Yahoo .NS suffix)
+├── universe.py            # universe registry + symbol loader
+├── download_data.py       # fetches daily OHLCV → data/<universe>/<SYMBOL>.csv
+├── backtest.py            # runs the strategy backtest per universe
+├── dashboard.py           # Streamlit live scanner (universe picker)
 ├── requirements.txt
-├── data/                  # per-symbol CSVs (created by download_data.py)
-└── results/               # trades.csv & equity_curve.csv (created by backtest.py)
+├── data/
+│   ├── nasdaq100/         # per-symbol CSVs
+│   └── nifty50/
+└── results/
+    ├── nasdaq100/         # trades.csv, equity_curve.csv
+    └── nifty50/
 ```
 
 ---
@@ -31,14 +39,17 @@ Dependencies: `pandas`, `numpy`, `yfinance`, `streamlit`.
 
 ## 1. Download data — `download_data.py`
 
-Reads symbols from `NASDAQ100.csv` and saves one CSV per ticker into `data/`.
+Reads symbols from the universe CSV and saves one CSV per ticker into `data/<universe>/`.
 
 ```bash
-# defaults: --start 2025-01-01, --symbols-csv ./NASDAQ100.csv, --data-dir ./data
-python download_data.py
+# NASDAQ 100 (default)
+python download_data.py --start 2023-01-01
 
-# custom range
-python download_data.py --start 2023-01-01 --end 2026-04-26
+# Nifty 50
+python download_data.py --universe nifty50 --start 2023-01-01
+
+# overrides if you want a custom CSV / output dir
+python download_data.py --universe nifty50 --symbols-csv ./Nifty50.csv --data-dir ./data/nifty50
 ```
 
 > **Recommendation:** for the backtest to produce meaningful signals, download at least one extra year of history so 220-day EMA and 52-week stats have full lookback. Use `--start 2023-01-01` or earlier.
@@ -48,13 +59,14 @@ python download_data.py --start 2023-01-01 --end 2026-04-26
 ## 2. Backtest — `backtest.py`
 
 ```bash
-python backtest.py
+python backtest.py                       # NASDAQ 100 (default)
+python backtest.py --universe nifty50    # Nifty 50
 ```
 
-Outputs:
-- Console summary (returns, drawdown, Sharpe, win rate, profit factor, exit-reason counts)
-- `results/trades.csv` — every trade with entry/exit prices, PnL, holding days, exit reason
-- `results/equity_curve.csv` — daily cash, market value, equity, open positions
+Outputs (per universe):
+- Console summary (returns, drawdown, Sharpe, win rate, profit factor, exit-reason counts) — formatted with the universe's currency symbol
+- `results/<universe>/trades.csv` — every trade with entry/exit prices, PnL, holding days, exit reason
+- `results/<universe>/equity_curve.csv` — daily cash, market value, equity, open positions
 
 ### Strategy rules
 
@@ -83,7 +95,7 @@ Outputs:
 streamlit run dashboard.py
 ```
 
-Pulls fresh data via `yfinance` (batched, 5-minute cache) and displays:
+Pick the **universe** from the sidebar (NASDAQ 100 / Nifty 50). Pulls fresh data via `yfinance` (batched, 5-minute cache) and displays:
 
 - 🕒 **Last-refresh timestamp** with relative age
 - 🚀 **Buy Signals** — symbols satisfying all filters AND breaking out today
@@ -91,7 +103,23 @@ Pulls fresh data via `yfinance` (batched, 5-minute cache) and displays:
 - 📊 **All Symbols** — sortable summary
 - 🔍 **Detail** — per-symbol filter checklist (✅/❌) and a price/SMA/EMA chart
 
-Sidebar controls: lookback days, force-refresh button, filter legend.
+Sidebar controls: universe picker, lookback days, force-refresh button, filter legend.
+
+### Adding a new universe
+
+Edit `universe.py` and add an entry to `UNIVERSES`:
+
+```python
+"sp500": {
+    "label": "S&P 500",
+    "csv": ROOT / "SP500.csv",
+    "data_dir": ROOT / "data" / "sp500",
+    "results_dir": ROOT / "results" / "sp500",
+    "currency": "$",
+},
+```
+
+Drop a `SP500.csv` (column `Symbol`) in the project root — it auto-appears in the dashboard and CLI choices.
 
 The dashboard imports `add_indicators` and `signal_mask` directly from `backtest.py`, so live signals always match backtest logic.
 

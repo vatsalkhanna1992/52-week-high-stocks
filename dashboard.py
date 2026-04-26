@@ -7,7 +7,8 @@ Run:
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -15,9 +16,10 @@ import streamlit as st
 import yfinance as yf
 
 from backtest import add_indicators, signal_mask
+from download_data import download_symbol
+import universe as uni
 
 ROOT = Path(__file__).parent
-SYMBOLS_CSV = ROOT / "NASDAQ100.csv"
 
 FILTER_LABELS = {
     "F1": "SMA150 > EMA220",
@@ -31,8 +33,7 @@ FILTER_LABELS = {
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_symbols(path: str) -> list[str]:
-    df = pd.read_csv(path)
-    return df["Symbol"].dropna().astype(str).str.strip().str.upper().unique().tolist()
+    return uni.load_symbols(path)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -115,24 +116,72 @@ def fmt_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     return df.style.format(fmt, na_rep="—")
 
 
+def run_download(cfg: dict, start: str, end: str | None, sleep_s: float) -> None:
+    """Download all symbols for a universe, with live progress feedback."""
+    out_dir = cfg["data_dir"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    symbols = uni.load_symbols(cfg["csv"])
+
+    progress = st.progress(0.0, text=f"Starting download of {len(symbols)} symbols…")
+    log = st.empty()
+    ok = fail = 0
+    failures: list[str] = []
+
+    for i, sym in enumerate(symbols, 1):
+        progress.progress(i / len(symbols), text=f"[{i}/{len(symbols)}] {sym}")
+        if download_symbol(sym, start, end, out_dir):
+            ok += 1
+        else:
+            fail += 1
+            failures.append(sym)
+        log.caption(f"✅ {ok}   ❌ {fail}   →  {out_dir}")
+        if sleep_s:
+            time.sleep(sleep_s)
+
+    progress.empty()
+    if fail == 0:
+        st.success(f"Downloaded {ok} symbols to {out_dir}")
+    else:
+        st.warning(f"Downloaded {ok}, failed {fail}: {', '.join(failures)}")
+    st.cache_data.clear()
+
+
 def main() -> None:
-    st.set_page_config(page_title="NASDAQ 100 Strategy Scanner", layout="wide")
-    st.title("📈 NASDAQ 100 — Live Strategy Scanner")
+    st.set_page_config(page_title="Strategy Scanner", layout="wide")
 
     with st.sidebar:
         st.header("Settings")
+        universe_key = st.selectbox(
+            "Universe",
+            options=list(uni.UNIVERSES.keys()),
+            format_func=lambda k: uni.UNIVERSES[k]["label"],
+            index=0,
+        )
         lookback = st.number_input("Lookback days", 300, 1500, 500, 50,
                                    help="Need ≥ 252 trading days for 52-week stats.")
         if st.button("🔄 Force refresh", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
         st.caption("Yahoo Finance data is cached for 5 minutes.")
+
+        st.divider()
+        with st.expander("⬇ Download data to disk"):
+            cfg_dl = uni.get(universe_key)
+            dl_start = st.date_input("Start date", value=date(2023, 1, 1), key="dl_start")
+            dl_end = st.date_input("End date (optional)", value=None, key="dl_end")
+            sleep_s = st.number_input("Sleep between requests (s)", 0.0, 2.0, 0.2, 0.1, key="dl_sleep")
+            if st.button(f"Download {cfg_dl['label']}", use_container_width=True, key="dl_btn"):
+                run_download(cfg_dl, str(dl_start), str(dl_end) if dl_end else None, sleep_s)
+
         st.divider()
         st.subheader("Strategy filters")
         for k, v in FILTER_LABELS.items():
             st.markdown(f"**{k}** — {v}")
 
-    symbols = load_symbols(str(SYMBOLS_CSV))
+    cfg = uni.get(universe_key)
+    st.title(f"📈 {cfg['label']} — Live Strategy Scanner")
+
+    symbols = load_symbols(str(cfg["csv"]))
     st.caption(f"Scanning **{len(symbols)}** symbols")
 
     with st.spinner("Fetching live data from Yahoo Finance…"):
