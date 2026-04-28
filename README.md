@@ -2,7 +2,7 @@
 
 End-to-end Python toolkit to **download** index constituent daily data from Yahoo Finance, **backtest** a 52-week breakout strategy with trend filters, and **scan live** via a Streamlit dashboard.
 
-Supports multiple universes — currently **NASDAQ 100** (US, USD) and **Nifty 50** (India, INR). Add more by extending `universe.py`.
+Supports multiple universes — currently **NASDAQ 100** (US, USD), **Nifty 50**, **Nifty Midcap 150** and **Nifty Smallcap 250** (India, INR). Add more by extending `universe.py`.
 
 ---
 
@@ -10,8 +10,11 @@ Supports multiple universes — currently **NASDAQ 100** (US, USD) and **Nifty 5
 
 ```
 buy_sell_strategy_app/
-├── NASDAQ100.csv          # NASDAQ 100 symbol list
-├── Nifty50.csv            # Nifty 50 symbol list (Yahoo .NS suffix)
+├── tickers/
+│   ├── NASDAQ100.csv      # NASDAQ 100 symbol list
+│   ├── NIFTY50.csv        # Nifty 50 symbol list (Yahoo .NS suffix)
+│   ├── MIDCAP150.csv      # Nifty Midcap 150 symbol list (Yahoo .NS suffix)
+│   └── SMALLCAP250.csv    # Nifty Smallcap 250 symbol list (Yahoo .NS suffix)
 ├── universe.py            # universe registry + symbol loader
 ├── download_data.py       # fetches daily OHLCV → data/<universe>/<SYMBOL>.csv
 ├── backtest.py            # runs the strategy backtest per universe
@@ -19,10 +22,14 @@ buy_sell_strategy_app/
 ├── requirements.txt
 ├── data/
 │   ├── nasdaq100/         # per-symbol CSVs
-│   └── nifty50/
+│   ├── nifty50/
+│   ├── midcap150/
+│   └── smallcap250/
 └── results/
     ├── nasdaq100/         # trades.csv, equity_curve.csv
-    └── nifty50/
+    ├── nifty50/
+    ├── midcap150/
+    └── smallcap250/
 ```
 
 ---
@@ -112,14 +119,14 @@ Edit `universe.py` and add an entry to `UNIVERSES`:
 ```python
 "sp500": {
     "label": "S&P 500",
-    "csv": ROOT / "SP500.csv",
+    "csv": TICKERS_DIR / "SP500.csv",
     "data_dir": ROOT / "data" / "sp500",
     "results_dir": ROOT / "results" / "sp500",
     "currency": "$",
 },
 ```
 
-Drop a `SP500.csv` (column `Symbol`) in the project root — it auto-appears in the dashboard and CLI choices.
+Drop a `SP500.csv` (column `Symbol`) in `tickers/` — it auto-appears in the dashboard and CLI choices.
 
 The dashboard imports `add_indicators` and `signal_mask` directly from `backtest.py`, so live signals always match backtest logic.
 

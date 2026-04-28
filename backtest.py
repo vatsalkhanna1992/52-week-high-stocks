@@ -49,14 +49,25 @@ def load_prices(data_dir: Path) -> dict[str, pd.DataFrame]:
     return prices
 
 
+def _ema_sma_seeded(c: pd.Series, span: int) -> pd.Series:
+    """EMA seeded with SMA(span) at the first valid bar — matches TA-Lib / TradingView."""
+    alpha = 2 / (span + 1)
+    if len(c) < span:
+        return pd.Series(np.nan, index=c.index, dtype=float)
+    vals = c.to_numpy(dtype=float)
+    e = np.full(len(c), np.nan)
+    e[span - 1] = vals[:span].mean()
+    for i in range(span, len(c)):
+        e[i] = alpha * vals[i] + (1 - alpha) * e[i - 1]
+    return pd.Series(e, index=c.index)
+
+
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     c = out["Close"]
     out["SMA50"] = c.rolling(50).mean()
     out["SMA150"] = c.rolling(150).mean()
-    ema = c.ewm(span=220, adjust=False).mean()
-    ema.iloc[:220] = np.nan
-    out["EMA220"] = ema
+    out["EMA220"] = _ema_sma_seeded(c, 220)
     out["Low52W"] = c.rolling(TRADING_DAYS_52W).min()
     # Prior 52w high — exclude today so a fresh close > prior max is a true breakout
     out["High52W_Prior"] = c.shift(1).rolling(TRADING_DAYS_52W).max()
